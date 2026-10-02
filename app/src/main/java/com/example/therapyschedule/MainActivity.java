@@ -1,12 +1,15 @@
 package com.example.therapyschedule;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -21,6 +24,9 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.TimePicker;
 import android.widget.Toast;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -47,6 +53,15 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         database = new AppointmentDatabase(this);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
+        for (AppointmentDatabase.Appointment appointment : database.getUpcomingAppointments()) {
+            AppointmentReminderScheduler.schedule(this, appointment.id, appointment.startsAt, appointment.clientName);
+        }
         selectedDay = Calendar.getInstance();
         selectedDay.set(Calendar.HOUR_OF_DAY, 0);
         selectedDay.set(Calendar.MINUTE, 0);
@@ -206,6 +221,7 @@ public final class MainActivity extends Activity {
                 .setNegativeButton("Keep session", null)
                 .setPositiveButton("Cancel session", (dialog, which) -> {
                     database.cancelAppointment(appointment.id);
+                    AppointmentReminderScheduler.cancel(this, appointment.id);
                     render();
                 }).show());
     }
@@ -411,7 +427,14 @@ public final class MainActivity extends Activity {
                     int duration = minutes[durationPicker.getSelectedItemPosition()];
                     long startsAt = appointmentTime.getTimeInMillis();
                     long clientId = clients.get(clientPicker.getSelectedItemPosition()).id;
-                    if (database.addAppointment(clientId, startsAt, duration)) {
+                    long appointmentId = database.addAppointment(clientId, startsAt, duration);
+                    if (appointmentId != -1L) {
+                        AppointmentReminderScheduler.schedule(
+                                this,
+                                appointmentId,
+                                startsAt,
+                                clients.get(clientPicker.getSelectedItemPosition()).name
+                        );
                         dialog.dismiss();
                         showingPatients = false;
                         selectedDay.setTimeInMillis(startsAt);

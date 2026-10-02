@@ -77,7 +77,24 @@ final class AppointmentDatabase extends SQLiteOpenHelper {
         return appointments;
     }
 
-    boolean addAppointment(long clientId, long startsAt, int durationMinutes) {
+    List<Appointment> getUpcomingAppointments() {
+        ArrayList<Appointment> appointments = new ArrayList<>();
+        String sql = "SELECT a.id, a.client_id, c.name, a.starts_at, a.duration_minutes " +
+                "FROM appointments a JOIN clients c ON c.id = a.client_id " +
+                "WHERE a.status = 'scheduled' AND a.starts_at > ? " +
+                "ORDER BY a.starts_at";
+        try (Cursor cursor = getReadableDatabase().rawQuery(
+                sql, new String[]{Long.toString(System.currentTimeMillis())})) {
+            while (cursor.moveToNext()) {
+                appointments.add(new Appointment(
+                        cursor.getLong(0), cursor.getLong(1), cursor.getString(2),
+                        cursor.getLong(3), cursor.getInt(4)));
+            }
+        }
+        return appointments;
+    }
+
+    long addAppointment(long clientId, long startsAt, int durationMinutes) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
@@ -87,16 +104,16 @@ final class AppointmentDatabase extends SQLiteOpenHelper {
                             "AND starts_at < ? AND starts_at + duration_minutes * 60000 > ? LIMIT 1",
                     new String[]{Long.toString(endsAt), Long.toString(startsAt)})) {
                 if (cursor.moveToFirst()) {
-                    return false;
+                    return -1L;
                 }
             }
             ContentValues values = new ContentValues();
             values.put("client_id", clientId);
             values.put("starts_at", startsAt);
             values.put("duration_minutes", durationMinutes);
-            db.insertOrThrow("appointments", null, values);
+            long appointmentId = db.insertOrThrow("appointments", null, values);
             db.setTransactionSuccessful();
-            return true;
+            return appointmentId;
         } finally {
             db.endTransaction();
         }
